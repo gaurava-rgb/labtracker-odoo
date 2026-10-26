@@ -54,7 +54,7 @@ services:
 
   # ------------------------------------------------------------------ Odoo (custom image)
   odoo:
-    image: ${LABTRACKER_IMAGE:-labtracker-odoo:20.0}
+    image: ${LABTRACKER_IMAGE:-ghcr.io/gaurava-rgb/labtracker-odoo:20.0}
     build: .
     restart: unless-stopped
     init: true
