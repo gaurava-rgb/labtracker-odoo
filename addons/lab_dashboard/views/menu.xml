@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_lab_home" model="ir.actions.client">
+        <field name="name">Lab Home</field>
+        <field name="tag">lab_dashboard.home</field>
+    </record>
+
+    <!-- Visibility: init/lab_roles.py sets group_ids on these menus (Lab Manager, Lab Coordinator, Settings admin)
+         once the groups exist. The server-side access check in models/lab_dashboard.py is always enforced. -->
+    <!-- first entry under Project (before the saved-filter "Lab home" list which has sequence 0) -->
+    <menuitem id="menu_lab_home_project" name="Lab Home" parent="project.menu_main_pm"
+              action="action_lab_home" sequence="-1"/>
+
+    <!-- top-level app entry -->
+    <menuitem id="menu_lab_root" name="Lab" sequence="1" web_icon="lab_dashboard,static/description/icon.png"/>
+    <menuitem id="menu_lab_home_root" name="Lab Home" parent="menu_lab_root" action="action_lab_home" sequence="1"/>
+</odoo>

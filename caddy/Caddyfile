@@ -1,0 +1,15 @@
+# Automatic HTTPS (Let's Encrypt) for the Lab Tracker. DOMAIN comes from .env.
+{$DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 64MB
+	}
+	# Odoo live notifications use a websocket on the gevent port
+	@ws path /websocket /websocket/*
+	reverse_proxy @ws odoo:8072
+	reverse_proxy odoo:8069 {
+		transport http {
+			read_timeout 720s
+		}
+	}
+}

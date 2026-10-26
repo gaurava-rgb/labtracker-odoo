@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="lab_dashboard.LabHome">
+        <div class="o_lab_home">
+            <div class="o_lab_home_header">
+                <h2>Lab Home</h2>
+                <div class="o_lab_home_meta">
+                    <t t-if="this.state.data">
+                        <span class="o_lab_badge" t-att-class="this.state.data.source === 'replica' ? 'o_lab_badge_replica' : 'o_lab_badge_live'"
+                              t-att-title="this.state.data.source === 'replica' ? 'Numbers read from the Postgres read replica' : 'Replica unavailable: numbers read live from the main database'">
+                            <t t-if="this.state.data.source === 'replica'">replica</t>
+                            <t t-else="">live data</t>
+                        </span>
+                        <span class="o_lab_asof">as of <t t-out="this.state.data.as_of"/> UTC</span>
+                    </t>
+                    <button class="btn btn-secondary btn-sm" t-on-click="this.load" t-att-disabled="this.state.loading">Refresh</button>
+                </div>
+            </div>
+
+            <div t-if="this.state.error" class="alert alert-danger" role="alert"><t t-out="this.state.error"/></div>
+
+            <div class="o_lab_tiles">
+                <t t-foreach="this.tiles" t-as="tile" t-key="tile.key">
+                    <button class="o_lab_tile" t-att-class="'o_lab_tile_' + tile.key" t-on-click="() => this.openTile(tile)" t-att-disabled="!this.state.data">
+                        <div class="o_lab_tile_value"><t t-if="this.state.loading">…</t><t t-else="" t-out="this.count(tile.key)"/></div>
+                        <div class="o_lab_tile_label"><t t-out="tile.label"/></div>
+                    </button>
+                </t>
+            </div>
+
+            <div class="o_lab_panels" t-if="this.state.data">
+                <section class="o_lab_panel">
+                    <header>
+                        <h3>Needs attention</h3>
+                        <a href="#" t-on-click.prevent="() => this.openList('attention', 'Needs attention')">open list</a>
+                    </header>
+                    <table class="o_lab_table">
+                        <thead><tr><th>Request</th><th>Stage</th><th>Assigned</th><th>Deadline</th><th>Why</th></tr></thead>
+                        <tbody>
+                            <tr t-if="!this.state.data.attention.length"><td colspan="5" class="o_lab_empty">Nothing needs attention.</td></tr>
+                            <tr t-foreach="this.state.data.attention" t-as="r" t-key="r.id" t-on-click="() => this.openRecord('project.task', r.id)">
+                                <td><t t-out="r.name"/></td>
+                                <td class="o_lab_nowrap"><t t-out="r.stage"/></td>
+                                <td><t t-out="r.assignees || '—'"/></td>
+                                <td class="o_lab_nowrap" t-att-class="r.overdue ? 'o_lab_overdue' : ''"><t t-out="r.deadline || '—'"/></td>
+                                <td><t t-foreach="r.flags" t-as="f" t-key="f"><span class="o_lab_flag" t-att-class="'o_lab_flag_' + f"><t t-out="f"/></span></t></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section class="o_lab_panel">
+                    <header>
+                        <h3>Due in the next 14 days</h3>
+                        <a href="#" t-on-click.prevent="() => this.openList('due14', 'Due in 14 days')">open list</a>
+                    </header>
+                    <table class="o_lab_table">
+                        <thead><tr><th>Request</th><th>Stage</th><th>Assigned</th><th>Deadline</th></tr></thead>
+                        <tbody>
+                            <tr t-if="!this.state.data.due14.length"><td colspan="4" class="o_lab_empty">Nothing due in the next 14 days.</td></tr>
+                            <tr t-foreach="this.state.data.due14" t-as="r" t-key="r.id" t-on-click="() => this.openRecord('project.task', r.id)">
+                                <td><t t-out="r.name"/></td>
+                                <td class="o_lab_nowrap"><t t-out="r.stage"/></td>
+                                <td><t t-out="r.assignees || '—'"/></td>
+                                <td class="o_lab_nowrap"><t t-out="r.deadline"/></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section class="o_lab_panel">
+                    <header>
+                        <h3>Equipment status</h3>
+                        <a href="#" t-on-click.prevent="() => this.openTile(this.tiles[4])">down only</a>
+                    </header>
+                    <table class="o_lab_table">
+                        <thead><tr><th>Equipment</th><th>Serial</th><th>Condition</th><th>Open requests</th></tr></thead>
+                        <tbody>
+                            <tr t-if="!this.state.data.equipment.length"><td colspan="4" class="o_lab_empty">No equipment.</td></tr>
+                            <tr t-foreach="this.state.data.equipment" t-as="e" t-key="e.id" t-on-click="() => this.openRecord('maintenance.equipment', e.id)">
+                                <td><t t-out="e.name"/></td>
+                                <td class="o_lab_nowrap"><t t-out="e.serial_no || '—'"/></td>
+                                <td><span class="o_lab_cond" t-att-class="'o_lab_cond_' + (e.condition || 'unknown')"><t t-out="this.conditionLabel(e.condition)"/></span></td>
+                                <td><t t-out="e.open_requests"/></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+        </div>
+    </t>
+</templates>

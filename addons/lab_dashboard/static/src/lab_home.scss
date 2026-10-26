@@ -1,0 +1,52 @@
+.o_lab_home {
+    padding: 16px 24px 32px;
+    overflow: auto;
+    height: 100%;
+    background: var(--o-webclient-background-color, #f8f9fa);
+
+    .o_lab_home_header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+        h2 { margin: 0; font-weight: 600; } }
+    .o_lab_home_meta { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: #6c757d; }
+    .o_lab_badge { padding: 2px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.04em; }
+    .o_lab_badge_replica { background: #e7f1ff; color: #0b5ed7; }
+    .o_lab_badge_live { background: #fff3cd; color: #997404; }
+
+    .o_lab_tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .o_lab_tile { border: 1px solid #dee2e6; border-radius: 8px; background: #fff; padding: 14px 12px; text-align: left; cursor: pointer;
+        border-left-width: 5px; transition: box-shadow 0.15s;
+        &:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        &:disabled { cursor: default; opacity: 0.7; } }
+    .o_lab_tile_value { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+    .o_lab_tile_label { font-size: 0.85rem; color: #6c757d; margin-top: 4px; }
+    .o_lab_tile_open { border-left-color: #0d6efd; }
+    .o_lab_tile_unassigned { border-left-color: #6f42c1; }
+    .o_lab_tile_overdue { border-left-color: #dc3545; }
+    .o_lab_tile_blocked { border-left-color: #fd7e14; }
+    .o_lab_tile_equipment_down { border-left-color: #6c757d; }
+
+    .o_lab_panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .o_lab_panel { background: #fff; border: 1px solid #dee2e6; border-radius: 8px; padding: 12px 14px; min-width: 0;
+        header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;
+            h3 { font-size: 1rem; font-weight: 600; margin: 0; }
+            a { font-size: 0.8rem; } } }
+    .o_lab_table { width: 100%; font-size: 0.85rem; border-collapse: collapse;
+        th { text-align: left; color: #6c757d; font-weight: 500; padding: 4px 6px; border-bottom: 1px solid #e9ecef; white-space: nowrap; }
+        td { padding: 6px; border-bottom: 1px solid #f1f3f5; vertical-align: top; overflow-wrap: anywhere; }
+        tbody tr { cursor: pointer; &:hover td { background: #f8f9fa; } } }
+    .o_lab_empty { color: #6c757d; font-style: italic; cursor: default; }
+    .o_lab_overdue { color: #dc3545; font-weight: 600; }
+    .o_lab_nowrap { white-space: nowrap; }
+    .o_lab_flag { display: inline-block; white-space: nowrap; margin-bottom: 2px; font-size: 0.7rem; padding: 1px 6px; border-radius: 8px; margin-right: 4px; background: #e9ecef; color: #495057; }
+    .o_lab_flag_overdue { background: #f8d7da; color: #842029; }
+    .o_lab_flag_blocked { background: #ffe5d0; color: #984c0c; }
+    .o_lab_flag_unassigned { background: #e2d9f3; color: #432874; }
+    .o_lab_cond { font-size: 0.75rem; padding: 1px 8px; border-radius: 8px; background: #e9ecef; }
+    .o_lab_cond_available { background: #d1e7dd; color: #0f5132; }
+    .o_lab_cond_under_repair { background: #fff3cd; color: #664d03; }
+    .o_lab_cond_out_of_service { background: #f8d7da; color: #842029; }
+
+    @media (max-width: 1100px) {
+        .o_lab_tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .o_lab_panels { grid-template-columns: 1fr; }
+    }
+}

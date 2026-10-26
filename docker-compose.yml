@@ -1,0 +1,132 @@
+# Lab Tracker Odoo stack. All secrets come from .env (create it with ./make-env.sh).
+#   core:            docker compose up -d
+#   with HTTPS:      docker compose --profile tls up -d            (needs DOMAIN in .env, ports 80/443 free)
+#   with backups:    docker compose --profile backup up -d
+#   everything:      docker compose --profile tls --profile backup up -d
+
+x-pg-env: &pg-env
+  POSTGRES_USER: odoo
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./make-env.sh first}
+  REPLICATOR_PASSWORD: ${REPLICATOR_PASSWORD:?run ./make-env.sh first}
+  DASH_RO_PASSWORD: ${DASH_RO_PASSWORD:?run ./make-env.sh first}
+
+services:
+  # ------------------------------------------------------------------ primary database
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      <<: *pg-env
+      POSTGRES_DB: postgres
+    # replication settings (safe defaults; a dead replica can keep at most 2 GB of WAL)
+    command: >
+      postgres -c wal_level=replica -c max_wal_senders=10 -c max_replication_slots=10
+               -c max_slot_wal_keep_size=2GB -c hot_standby=on
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init-primary.sh:/docker-entrypoint-initdb.d/01-labtracker.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # ------------------------------------------------------------------ streaming hot standby (read-only copy)
+  db_replica:
+    image: postgres:16
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *pg-env
+      PRIMARY_HOST: db
+      REPLICA_SLOT: labtracker_replica
+    entrypoint: ["/replica-entrypoint.sh"]
+    volumes:
+      - pgdata_replica:/var/lib/postgresql/data
+      - ./db/replica-entrypoint.sh:/replica-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+  # ------------------------------------------------------------------ Odoo (custom image)
+  odoo:
+    image: ${LABTRACKER_IMAGE:-labtracker-odoo:20.0}
+    build: .
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *pg-env
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: odoo
+      ODOO_DB: ${ODOO_DB:-labtracker}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?run ./make-env.sh first}
+      ODOO_MASTER_PASSWORD: ${ODOO_MASTER_PASSWORD:?run ./make-env.sh first}
+      COMPANY_NAME: ${COMPANY_NAME:-Lab Tracker}
+      WORKERS: ${WORKERS:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LAB_CREATE_TEST_USERS: ${LAB_CREATE_TEST_USERS:-0}
+      LAB_TEST_MANAGER_PW: ${LAB_TEST_MANAGER_PW:-}
+      LAB_TEST_COORDINATOR_PW: ${LAB_TEST_COORDINATOR_PW:-}
+      LAB_TEST_INTERN_PW: ${LAB_TEST_INTERN_PW:-}
+      FORCE_PROVISION: ${FORCE_PROVISION:-0}
+      # read-only DSN for the Lab Home dashboard; it falls back to the main database if the replica is down
+      LAB_DASH_DSN: "host=db_replica port=5432 dbname=${ODOO_DB:-labtracker} user=dash_ro password=${DASH_RO_PASSWORD} connect_timeout=3 application_name=lab_dashboard"
+    ports:
+      - "${ODOO_BIND:-127.0.0.1}:${ODOO_PORT:-8069}:8069"
+      - "${ODOO_BIND:-127.0.0.1}:${ODOO_CHAT_PORT:-8072}:8072"
+    volumes:
+      - odoo_data:/var/lib/odoo
+
+  # ------------------------------------------------------------------ HTTPS front door (profile "tls")
+  caddy:
+    image: caddy:2
+    profiles: ["tls"]
+    restart: unless-stopped
+    depends_on: [odoo]
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env to use the tls profile}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # ------------------------------------------------------------------ nightly backups (profile "backup")
+  backup:
+    image: postgres:16
+    profiles: ["backup"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: odoo
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      ODOO_DB: ${ODOO_DB:-labtracker}
+      BACKUP_TIME: ${BACKUP_TIME:-03:10}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_ON_START: ${BACKUP_ON_START:-1}
+    entrypoint: ["/bin/bash", "/backup.sh"]
+    volumes:
+      - ./backup/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+      - odoo_data:/odoo-data:ro
+
+volumes:
+  pgdata:
+  pgdata_replica:
+  odoo_data:
+  caddy_data:
+  caddy_config:
