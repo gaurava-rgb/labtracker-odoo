@@ -4,6 +4,8 @@ Lab Tracker is a ready-made Odoo 20 setup for a small lab: requests and samples 
 (Maintenance), clients (Contacts, CRM), three staff roles, and a "Lab Home" dashboard that reads from a
 live read-only copy of the database. Everything is set up automatically the first time it starts.
 
+First time doing this? Read **[DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)**: a step-by-step walkthrough from renting a server to adding users.
+
 ## What you need
 
 - A Linux server (VM) with Docker and Docker Compose installed. Ubuntu 22.04 or 24.04 works well.
