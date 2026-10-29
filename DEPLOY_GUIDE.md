@@ -124,6 +124,17 @@ docker compose logs -f odoo
 
 Wait until you see a line containing **`provisioning finished`** (about 3 minutes after the download). Press `Ctrl+C` to stop watching. The app keeps running.
 
+### 7b. Server already running nginx for other sites?
+
+Then ports 80 and 443 are taken and the `tls` part above will fail. Do this instead:
+
+```sh
+docker compose --profile backup up -d
+scripts/nginx-site.sh lab.yourdomain.com
+```
+
+The second command adds an nginx entry for your domain and gets the certificate. Everything else in this guide is the same, just leave out `--profile tls` from every command.
+
 ---
 
 ## 8. First login (3 minutes)
