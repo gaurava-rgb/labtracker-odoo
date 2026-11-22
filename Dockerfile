@@ -4,11 +4,13 @@ FROM odoo:20.0
 
 USER root
 # the add-on and the provisioning scripts (xmlrpc + psycopg2 only, both already in the base image)
-COPY --chown=odoo:odoo addons/lab_dashboard /mnt/extra-addons/lab_dashboard
+# /mnt/extra-addons is a VOLUME in the official image. Compose can retain its
+# old contents across image upgrades, masking newly copied application code.
+COPY --chown=odoo:odoo addons/lab_dashboard /opt/labtracker/addons/lab_dashboard
 COPY --chown=odoo:odoo init /opt/labtracker/init
 COPY --chown=odoo:odoo labtracker-entrypoint.sh /labtracker-entrypoint.sh
 RUN chmod 755 /labtracker-entrypoint.sh \
- && find /mnt/extra-addons /opt/labtracker -name '__pycache__' -prune -exec rm -rf {} + \
+ && find /opt/labtracker -name '__pycache__' -prune -exec rm -rf {} + \
  && chown odoo:odoo /etc/odoo/odoo.conf
 
 LABEL org.opencontainers.image.title="labtracker-odoo" \

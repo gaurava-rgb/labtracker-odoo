@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="lab_equipment_contact_view_list" model="ir.ui.view">
+        <field name="name">lab.equipment.contact.list</field>
+        <field name="model">lab.equipment.contact</field>
+        <field name="arch" type="xml">
+            <list string="Equipment contacts" editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="equipment_id"/>
+                <field name="partner_id"/>
+                <field name="type_id" placeholder="Sales, Support, Engineer..." options="{'no_open': True}"/>
+                <field name="phone" widget="phone"/>
+                <field name="email" widget="email"/>
+                <field name="company_id" optional="hide"/>
+                <field name="note"/>
+                <field name="active" widget="boolean_toggle" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="lab_equipment_contact_view_form" model="ir.ui.view">
+        <field name="name">lab.equipment.contact.form</field>
+        <field name="model">lab.equipment.contact</field>
+        <field name="arch" type="xml">
+            <form string="Equipment contact">
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <group>
+                        <group>
+                            <field name="equipment_id"/>
+                            <field name="partner_id"/>
+                            <field name="type_id" placeholder="Sales, Support, Engineer..." options="{'no_open': True}"/>
+                            <field name="note"/>
+                            <field name="active" invisible="1"/>
+                        </group>
+                        <group>
+                            <field name="phone" widget="phone"/>
+                            <field name="email" widget="email"/>
+                            <field name="company_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="lab_equipment_contact_view_search" model="ir.ui.view">
+        <field name="name">lab.equipment.contact.search</field>
+        <field name="model">lab.equipment.contact</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="partner_id"/>
+                <field name="equipment_id"/>
+                <field name="type_id"/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+                <group>
+                    <filter name="group_type" string="Type" context="{'group_by': 'type_id'}"/>
+                    <filter name="group_equipment" string="Equipment" context="{'group_by': 'equipment_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Contacts tab and smart button on the equipment form -->
+    <record id="hr_equipment_view_form_lab_contacts" model="ir.ui.view">
+        <field name="name">maintenance.equipment.form.lab_contacts</field>
+        <field name="model">maintenance.equipment</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_lab_contacts" type="object" class="oe_stat_button" icon="fa-address-book">
+                    <field string="Contacts" name="lab_contact_count" widget="statinfo"/>
+                </button>
+            </xpath>
+            <xpath expr="//notebook/page[@name='description']" position="before">
+                <page string="Contacts" name="lab_contacts">
+                    <field name="lab_contact_ids">
+                        <list editable="bottom">
+                            <field name="sequence" widget="handle"/>
+                            <field name="partner_id"/>
+                            <field name="type_id" placeholder="Sales, Support, Engineer..." options="{'no_open': True}"/>
+                            <field name="phone" widget="phone"/>
+                            <field name="email" widget="email"/>
+                            <field name="note"/>
+                        </list>
+                    </field>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- ===== equipment contact types (free text with suggestions; added in 20.0.2.3.0) ===== -->
+    <record id="lab_equipment_contact_type_view_list" model="ir.ui.view">
+        <field name="name">lab.equipment.contact.type.list</field>
+        <field name="model">lab.equipment.contact.type</field>
+        <field name="arch" type="xml">
+            <list string="Equipment contact types" editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="active" widget="boolean_toggle" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_lab_equipment_contact_type" model="ir.actions.act_window">
+        <field name="name">Equipment contact types</field>
+        <field name="res_model">lab.equipment.contact.type</field>
+        <field name="view_mode">list</field>
+    </record>
+
+    <menuitem id="menu_lab_equipment_contact_type" name="Equipment contact types"
+              parent="maintenance.menu_maintenance_configuration" action="action_lab_equipment_contact_type"
+              groups="maintenance.group_equipment_manager" sequence="50"/>
+    <!-- ===== end equipment contact types ===== -->
+</odoo>

@@ -10,6 +10,7 @@ const TILES = [
     { key: "unassigned", label: "Unassigned", model: "project.task" },
     { key: "overdue", label: "Overdue", model: "project.task" },
     { key: "blocked", label: "Blocked", model: "project.task" },
+    { key: "pending_pickup", label: "Pending pickup", model: "project.task" },
     { key: "equipment_down", label: "Equipment down", model: "maintenance.equipment" },
 ];
 
@@ -21,6 +22,7 @@ export class LabHome extends Component {
         this.orm = useService("orm");
         this.action = useService("action");
         this.tiles = TILES;
+        this.equipmentTile = TILES.find((t) => t.key === "equipment_down");
         this.state = proxy({ data: null, error: "", loading: true });
         onWillStart(() => this.load());
     }

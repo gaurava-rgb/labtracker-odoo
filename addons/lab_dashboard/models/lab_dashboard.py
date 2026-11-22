@@ -1,15 +1,18 @@
 """Lab Home dashboard data.
 
-get_data() returns the five tile counts, the three lists and the click-through domains.
+get_data() returns the six tile counts, the three lists and the click-through domains.
 Numbers are read with plain SQL from the Postgres read replica (DSN in env LAB_DASH_DSN,
 set by docker-compose). If the DSN is missing or the replica cannot be reached, the same
 numbers are computed on the primary through the ORM and the payload says source="live".
-Definitions mirror the saved filters created by scripts/odoo_lab_rules.py:
+Lab interns (without a manager/coordinator/admin group) always get the ORM path run as
+themselves, so record rules limit every number to their assigned work (payload scope="assigned").
+Definitions mirror the saved filters created by init/lab_rules.py:
   request   = top-level active task in project "Lab requests" (parent_id is NULL)
-  open      = request whose stage is not "Complete"
+  open      = request whose stage is not "Complete" or "Pending pickup" (lab work not finished)
+  pending pickup = request in stage "Pending pickup" (work done, awaiting client pickup)
   unassigned= open with no row in project_task_user_rel
   overdue   = open with date_deadline < now (UTC)
-  blocked   = request whose stage is "Blocked"
+  blocked   = open request with an equipment-derived blocking condition
   equipment down = maintenance_equipment with x_condition != 'available' (NULL counts as down)
 """
 import logging
@@ -22,7 +25,10 @@ from odoo.exceptions import AccessError
 _logger = logging.getLogger(__name__)
 
 PROJECT_NAME = "Lab requests"
-ALLOWED_GROUPS = ("lab_tracker.group_lab_manager", "lab_tracker.group_lab_coordinator", "base.group_system")
+LAB_WIDE_GROUPS = ("lab_tracker.group_lab_manager", "lab_tracker.group_lab_coordinator", "base.group_system")
+ALLOWED_GROUPS = LAB_WIDE_GROUPS + ("lab_tracker.group_lab_intern",)  # interns: own assigned work only
+DONE_STAGES = ["Complete", "Pending pickup"]  # same as lab_workflow.DONE_STAGE_NAMES
+PICKUP_STAGE = "Pending pickup"
 OPEN_REQUEST_STATES = ("done", "cancelled")  # maintenance.request states that are NOT open
 
 
@@ -31,24 +37,34 @@ class LabDashboard(models.AbstractModel):
     _description = "Lab Home dashboard"
 
     # ------------------------------------------------------------ access
-    def _check_dashboard_access(self):
+    def _has_any_group(self, xmlids):
         user = self.env.user
-        for xmlid in ALLOWED_GROUPS:
+        for xmlid in xmlids:
             try:
                 if user.has_group(xmlid):
-                    return
+                    return True
             except Exception:  # group not defined on this database
                 continue
-        raise AccessError(self.env._("Only lab managers and coordinators can open the Lab Home dashboard."))
+        return False
+
+    def _check_dashboard_access(self):
+        if not self._has_any_group(ALLOWED_GROUPS):
+            raise AccessError(self.env._("Only lab managers, coordinators and interns can open the Lab Home dashboard."))
+
+    def _dashboard_scope(self):
+        """'lab' = lab-wide numbers; 'assigned' = only what this user may read (interns)."""
+        return "lab" if self.env.su or self._has_any_group(LAB_WIDE_GROUPS) else "assigned"
 
     # ------------------------------------------------------------ public entry point
     @api.model
     def get_data(self):
         self._check_dashboard_access()
+        scope = self._dashboard_scope()
         now = fields.Datetime.now()
         data = None
         dsn = os.environ.get("LAB_DASH_DSN")
-        if dsn:
+        # The replica SQL ignores record rules, so it is only used for lab-wide roles.
+        if dsn and scope == "lab":
             try:
                 data = self._data_from_replica(dsn, now)
                 data["source"] = "replica"
@@ -58,6 +74,7 @@ class LabDashboard(models.AbstractModel):
         if data is None:
             data = self._data_from_orm(now)
             data["source"] = "live"
+        data["scope"] = scope
         data["as_of"] = fields.Datetime.to_string(now)
         data["domains"] = self._domains(data["project_id"], now)
         return data
@@ -66,16 +83,17 @@ class LabDashboard(models.AbstractModel):
     @api.model
     def _domains(self, project_id, now):
         base = [("project_id", "=", project_id), ("parent_id", "=", False)]
-        open_ = base + [("stage_id.name", "!=", "Complete")]
+        open_ = base + [("stage_id.name", "not in", DONE_STAGES)]
         now_s = fields.Datetime.to_string(now)
         in14 = fields.Datetime.to_string(now + timedelta(days=14))
         return {
             "open": open_,
             "unassigned": open_ + [("user_ids", "=", False)],
             "overdue": open_ + [("date_deadline", "<", now_s)],
-            "blocked": base + [("stage_id.name", "=", "Blocked")],
+            "blocked": open_ + [("lab_is_blocked", "=", True)],
             "due14": open_ + [("date_deadline", ">=", now_s), ("date_deadline", "<=", in14)],
-            "attention": open_ + ["|", "|", ("date_deadline", "<", now_s), ("stage_id.name", "=", "Blocked"), ("user_ids", "=", False)],
+            "attention": open_ + ["|", "|", ("date_deadline", "<", now_s), ("lab_is_blocked", "=", True), ("user_ids", "=", False)],
+            "pending_pickup": base + [("stage_id.name", "=", PICKUP_STAGE)],
             "equipment_down": [("x_condition", "!=", "available")],
         }
 
@@ -89,8 +107,9 @@ class LabDashboard(models.AbstractModel):
         req AS (
             SELECT t.id, t.name, t.date_deadline,
                    (SELECT value FROM jsonb_each_text(s.name) LIMIT 1) AS stage,
-                   EXISTS (SELECT 1 FROM jsonb_each_text(s.name) WHERE value = 'Complete') AS complete,
-                   EXISTS (SELECT 1 FROM jsonb_each_text(s.name) WHERE value = 'Blocked') AS blocked,
+                   EXISTS (SELECT 1 FROM jsonb_each_text(s.name) WHERE value = ANY(%(done)s)) AS complete,
+                   EXISTS (SELECT 1 FROM jsonb_each_text(s.name) WHERE value = %(pickup)s) AS pending_pickup,
+                   COALESCE(t.lab_is_blocked, false) AS blocked, t.lab_block_reason AS blocked_reason,
                    NOT EXISTS (SELECT 1 FROM project_task_user_rel r WHERE r.task_id = t.id) AS unassigned,
                    (t.date_deadline IS NOT NULL AND t.date_deadline < %(now)s) AS overdue,
                    (t.date_deadline >= %(now)s AND t.date_deadline <= %(in14)s) AS due14,
@@ -124,7 +143,7 @@ class LabDashboard(models.AbstractModel):
         import psycopg2
         import psycopg2.extras
 
-        params = {"project": PROJECT_NAME, "now": now, "in14": now + timedelta(days=14), "closed": OPEN_REQUEST_STATES}
+        params = {"project": PROJECT_NAME, "done": DONE_STAGES, "pickup": PICKUP_STAGE, "now": now, "in14": now + timedelta(days=14), "closed": OPEN_REQUEST_STATES}
         conn = psycopg2.connect(dsn)
         try:
             conn.set_session(readonly=True, autocommit=True)
@@ -143,7 +162,8 @@ class LabDashboard(models.AbstractModel):
     # ------------------------------------------------------------ live (ORM on the primary)
     @api.model
     def _project_id(self):
-        project = self.env["project.project"].search([("name", "=", PROJECT_NAME)], limit=1)
+        # sudo only to find the id; the task reads below still run with the user's record rules
+        project = self.env["project.project"].sudo().search([("name", "=", PROJECT_NAME)], limit=1)
         return project.id or 0
 
     @api.model
@@ -152,19 +172,19 @@ class LabDashboard(models.AbstractModel):
         in14 = now + timedelta(days=14)
         tasks = self.env["project.task"].search_read(
             [("project_id", "=", project_id), ("parent_id", "=", False)],
-            ["name", "date_deadline", "stage_id", "user_ids"], order="date_deadline, id",
+            ["name", "date_deadline", "stage_id", "user_ids", "lab_is_blocked", "lab_block_reason"], order="date_deadline, id",
         )
-        stage_names = {s["id"]: s["name"] for s in self.env["project.task.type"].search_read(
+        stage_names = {s["id"]: s["name"] for s in self.env["project.task.type"].sudo().search_read(
             [("id", "in", [t["stage_id"][0] for t in tasks if t["stage_id"]])], ["name"])}
         user_ids = {u for t in tasks for u in t["user_ids"]}
-        user_names = {u["id"]: u["name"] for u in self.env["res.users"].search_read([("id", "in", list(user_ids))], ["name"])}
+        user_names = {u["id"]: u["name"] for u in self.env["res.users"].sudo().search_read([("id", "in", list(user_ids))], ["name"])}
         rows = []
         for t in tasks:
             stage = stage_names.get(t["stage_id"][0], "") if t["stage_id"] else ""
             dl = t["date_deadline"]
             rows.append(self._req_row({
                 "id": t["id"], "name": t["name"], "date_deadline": dl, "stage": stage,
-                "complete": stage == "Complete", "blocked": stage == "Blocked",
+                "complete": stage in DONE_STAGES, "pending_pickup": stage == PICKUP_STAGE, "blocked": t["lab_is_blocked"], "blocked_reason": t["lab_block_reason"],
                 "unassigned": not t["user_ids"],
                 "overdue": bool(dl) and dl < now,
                 "due14": bool(dl) and now <= dl <= in14,
@@ -173,9 +193,13 @@ class LabDashboard(models.AbstractModel):
         equipment = self.env["maintenance.equipment"].search_read([], ["name", "serial_no", "x_condition"], order="name")
         open_counts = {}
         if equipment:
-            for eq, count in self.env["maintenance.request"]._read_group(
-                [("equipment_id", "in", [e["id"] for e in equipment]), ("stage_id.fold", "=", False),
-                 ("state", "not in", list(OPEN_REQUEST_STATES))], ["equipment_id"], ["__count"]):
+            try:
+                groups = self.env["maintenance.request"]._read_group(
+                    [("equipment_id", "in", [e["id"] for e in equipment]), ("stage_id.fold", "=", False),
+                     ("state", "not in", list(OPEN_REQUEST_STATES))], ["equipment_id"], ["__count"])
+            except AccessError:  # a role without maintenance request access sees 0 open requests
+                groups = []
+            for eq, count in groups:
                 if eq:
                     open_counts[eq.id] = count
         eq_rows = [self._eq_row({**e, "open_requests": open_counts.get(e["id"], 0)}) for e in equipment]
@@ -190,8 +214,9 @@ class LabDashboard(models.AbstractModel):
         return {
             "id": r["id"], "name": r["name"], "stage": r.get("stage") or "",
             "assignees": r.get("assignees") or "", "deadline": dl.strftime("%Y-%m-%d") if dl else "",
-            "open": not r.get("complete"), "blocked": bool(r.get("blocked")), "unassigned": bool(r.get("unassigned")),
+            "open": not r.get("complete"), "pending_pickup": bool(r.get("pending_pickup")), "blocked": bool(r.get("blocked")), "unassigned": bool(r.get("unassigned")),
             "overdue": bool(r.get("overdue")), "due14": bool(r.get("due14")), "flags": flags,
+            "blocked_reason": r.get("blocked_reason") or "",
         }
 
     @staticmethod
@@ -212,6 +237,7 @@ class LabDashboard(models.AbstractModel):
                 "unassigned": sum(1 for r in open_rows if r["unassigned"]),
                 "overdue": sum(1 for r in open_rows if r["overdue"]),
                 "blocked": sum(1 for r in rows if r["blocked"]),
+                "pending_pickup": sum(1 for r in rows if r["pending_pickup"]),
                 "equipment_down": sum(1 for e in equipment if e["condition"] != "available"),
             },
             "attention": attention,

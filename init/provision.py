@@ -3,7 +3,7 @@
 Steps (all search-before-create):
   1. wait until Odoo answers on ODOO_URL
   2. skip everything if ir.config_parameter 'labtracker.provisioned_version' == PROVISION_VERSION (set FORCE_PROVISION=1 to override)
-  3. lab_rules.main()    project "Lab requests" + stages, LAB- sequence + rule, Samples wording, x_equipment_id, x_condition, Lab home filters
+  3. lab_rules.main()    project "Lab requests" + stages, LAB- sequence + rule, Samples wording, x_equipment_id, x_condition, Requests board filters
   4. lab_phase2.main()   sample / request fields, views, two more rules, stage cleanup
   5. lab_roles.main()    Lab privilege, Manager / Coordinator / Intern groups, access rows, intern guard, menu visibility
   6. lab_rules.ensure_labels() again (registry reloads reset base-field labels) + trim_menus()
@@ -22,7 +22,7 @@ import lab_phase2  # noqa: E402
 import lab_roles  # noqa: E402
 import lab_rules  # noqa: E402
 
-PROVISION_VERSION = "2026.10.25-1"
+PROVISION_VERSION = "2026.11.22-1"  # QA follow-ups: Requests board rename, intern assignee automation retired, sample-only Time taken
 PARAM = "labtracker.provisioned_version"
 WAIT_SECONDS = int(os.environ.get("PROVISION_WAIT_SECONDS", "900"))
 

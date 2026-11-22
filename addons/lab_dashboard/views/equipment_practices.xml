@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Best practices and Maintenance procedures pages on the equipment form (added in 20.0.2.3.0).
+         Managers and coordinators edit them (coordinator write guard in models/lab_equipment.py); interns read. -->
+    <record id="hr_equipment_view_form_lab_practices" model="ir.ui.view">
+        <field name="name">maintenance.equipment.form.lab_practices</field>
+        <field name="model">maintenance.equipment</field>
+        <field name="inherit_id" ref="lab_dashboard.hr_equipment_view_form_lab_contacts"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook/page[@name='lab_contacts']" position="after">
+                <page string="Best practices" name="lab_best_practices">
+                    <field name="lab_best_practices" placeholder="How to use this instrument well: set-up, do and don't, safety..."/>
+                </page>
+                <page string="Maintenance procedures" name="lab_maintenance_procedures">
+                    <field name="lab_maintenance_procedures" placeholder="Step-by-step cleaning, calibration and service procedures..."/>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

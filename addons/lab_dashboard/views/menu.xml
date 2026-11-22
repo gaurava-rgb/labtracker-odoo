@@ -5,9 +5,9 @@
         <field name="tag">lab_dashboard.home</field>
     </record>
 
-    <!-- Visibility: init/lab_roles.py sets group_ids on these menus (Lab Manager, Lab Coordinator, Settings admin)
+    <!-- Visibility: init/lab_roles.py sets group_ids on these menus (Lab Manager, Lab Coordinator, Lab Intern, Settings admin)
          once the groups exist. The server-side access check in models/lab_dashboard.py is always enforced. -->
-    <!-- first entry under Project (before the saved-filter "Lab home" list which has sequence 0) -->
+    <!-- first entry under Project (before the saved-filter "Requests board" list which has sequence 0) -->
     <menuitem id="menu_lab_home_project" name="Lab Home" parent="project.menu_main_pm"
               action="action_lab_home" sequence="-1"/>
 

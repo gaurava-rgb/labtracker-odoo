@@ -4,6 +4,12 @@ Lab Tracker is a ready-made Odoo 20 setup for a small lab: requests and samples 
 (Maintenance), clients (Contacts, CRM), three staff roles, and a "Lab Home" dashboard that reads from a
 live read-only copy of the database. Everything is set up automatically the first time it starts.
 
+<!-- equipment features (lab_dashboard 20.0.2.3.0) -->
+Equipment features: each instrument has a **Condition** (Available / Under repair / Out of service), a **Contacts**
+tab whose contact **Type** is free text with suggestions (Sales, Support, Engineer, or type your own), and rich-text
+**Best practices** and **Maintenance procedures** tabs. Managers and Coordinators edit these; Interns read them.
+<!-- end equipment features -->
+
 First time doing this? Read **[DEPLOY_GUIDE.md](DEPLOY_GUIDE.md)**: a step-by-step walkthrough from renting a server to adding users.
 
 ## What you need
@@ -48,8 +54,8 @@ Settings > Users & Companies > Users > New. Fill name and email, then under **La
 | Role | Can do |
 |------|--------|
 | Manager | Everything in Project, Maintenance, Contacts and CRM. Sees Lab Home. |
-| Coordinator | Creates and edits requests and samples. Read-only on equipment, contacts, CRM. Sees Lab Home. |
-| Intern | Sees and edits only the requests and samples assigned to them. No Lab Home, no CRM. |
+| Coordinator | Creates and edits requests and samples. On equipment, changes condition, Best practices, Maintenance procedures and Contacts only. Creates, edits and archives contacts and equipment contact persons (no delete). Read-only on CRM. Sees Lab Home. |
+| Intern | Sees and edits only the requests and samples assigned to them, and can add samples to their own requests. Sees Lab Home for their own work only. No CRM. |
 
 Click **Send an Invitation Email** (if outgoing mail is configured) or set a password under Actions > Change Password.
 Leave the other access boxes as Odoo sets them; the Lab role already includes what each role needs.
@@ -61,7 +67,7 @@ Want three ready-made test users (`manager@lab.test`, `coordinator@lab.test`, `i
 
 ```bash
 docker compose ps                 # all services "Up" / "healthy"
-./scripts/verify.sh               # 9 checks: apps, Lab rules, roles, fields, dashboard, LAB- numbering
+./scripts/verify.sh               # smoke checks: apps, Lab rules, roles, fields, stages, menus, dashboard, LAB- numbering
 ./scripts/check-replica.sh        # the read-only copy is streaming (want 1 / t / replica)
 docker compose logs --tail 50 odoo
 ```
@@ -100,6 +106,19 @@ Only the `odoo` container restarts. On start it upgrades the Lab Home add-on if 
 one and re-applies the Lab setup if that changed. Your data stays in the Docker volumes
 (`pgdata`, `pgdata_replica`, `odoo_data`, `caddy_data`). Take a backup first (`./scripts/backup-now.sh`).
 
+## Synthetic test data and cleanup
+
+See [ROLES.md](ROLES.md) for what each Lab role can see, do, and cannot do.
+
+Request progression is enforced as New → Active → Complete → Pending pickup, with equipment-derived blocking kept separate.
+Samples have four toggles (Scan, Export, Email, Build in) and a numeric Time taken; requests show the total time.
+See [WORKFLOW.md](WORKFLOW.md) for the rules and `scripts/check-workflow.sh` for transactional checks.
+
+For a self-contained test dataset and three role-specific logins, run `scripts/seed-test-data.sh`.
+Remove its owned records and users with `scripts/clean-test-data.sh`.
+See [TEST_DATA.md](TEST_DATA.md) for passwords, dry runs, cleanup safeguards, and the full dataset.
+These helpers work with the running image without a rebuild.
+
 ## Optional: load the demo data
 
 The demo set (clients, instruments, requests, samples) lives in a separate Postgres database and is **not**
@@ -128,7 +147,7 @@ docker compose down -v                  # remove containers AND all data (backup
 |------|------------|
 | `Dockerfile`, `labtracker-entrypoint.sh` | The custom image: Odoo 20 + add-on + self-provisioning start script |
 | `init/` | Provisioning scripts run inside the container (`provision.py` drives `lab_rules.py`, `lab_phase2.py`, `lab_roles.py`) |
-| `addons/lab_dashboard/` | The Lab Home dashboard add-on |
+| `addons/lab_dashboard/` | The Lab Home dashboard add-on, request workflow, equipment Contacts tab (free-text contact types), Best practices and Maintenance procedures tabs, Coordinator equipment write guard |
 | `docker-compose.yml` | The 5 services: `db`, `db_replica`, `odoo`, `caddy` (profile tls), `backup` (profile backup) |
 | `db/` | Primary init SQL (roles, replication access) and the standby start script |
 | `caddy/Caddyfile` | HTTPS front door |

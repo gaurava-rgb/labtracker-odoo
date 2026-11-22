@@ -4,10 +4,11 @@ Ported for the labtracker-odoo image: connection from env (see odoo_api.py), cre
 Creates / updates:
   1. ir.sequence 'lab.request' (LAB-, padding 3, no_gap) + automation "Lab request: add LAB- code"
   2. Field labels child_ids / subtask_count -> "Samples", parent_id -> "Request" + view "Lab: call sub-tasks Samples"
-  3. project.task.x_equipment_id (many2one maintenance.equipment) + view "Lab: equipment on task"
-     + automations "Lab sample: inherit equipment" and "Lab: block equipment that is down"
+  3. project.task.x_equipment_id (many2one maintenance.equipment) + view "Lab: equipment on task" (lists ALL equipment;
+     the add-on labels unavailable items) + automation "Lab sample: inherit equipment". The old hard block
+     "Lab: block equipment that is down" is deleted on existing installs (retire_block_rule).
   4. maintenance.equipment.x_condition selection + badge on list/kanban/form + search filters
-  5. Saved filters on project.task + window action "Lab home" + first menu item under Project
+  5. Saved filters on project.task + window action "Requests board" (was "Lab home") + first menu item under Project
 Every xml id is resolved through ir.model.data (env.ref equivalent); the project is found by name.
 Normally run by provision.py inside the container. Stand-alone:
   ODOO_URL=http://host:8069 ODOO_DB=labtracker ODOO_PASSWORD=... python3 lab_rules.py [--trim-menus]
@@ -21,7 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from odoo_api import call  # noqa: E402
 
 PROJECT_NAME = "Lab requests"
-STAGES = ["New", "Active", "Blocked", "Complete"]
+STAGES = ["New", "Active", "Complete", "Pending pickup"]  # order enforced by the add-on (lab_workflow.py)
+DONE_STAGES = ["Complete", "Pending pickup"]  # lab work finished: not counted as open
 EQUIPMENT_CATEGORY = "Lab instruments"
 
 
@@ -135,7 +137,8 @@ def ensure_labels():
 # ---------------------------------------------------------------- 3. equipment on tasks
 VIEW_EQUIP = """<data>
   <xpath expr="//field[@name='partner_id']" position="after">
-    <field name="x_equipment_id" options="{'no_create': True}" domain="[('x_condition','=','available')]"/>
+    <!-- no domain: every instrument is listed; unavailable ones show e.g. "Centrifuge (Under repair)" (add-on display_name) -->
+    <field name="x_equipment_id" options="{'no_create': True}"/>
   </xpath>
 </data>"""
 
@@ -144,11 +147,23 @@ CODE_INHERIT = """for rec in records:
         rec.write({'x_equipment_id': rec.parent_id.x_equipment_id.id})
 """
 
-CODE_BLOCK = """for rec in records:
-    eq = rec.x_equipment_id
-    if eq and eq.x_condition and eq.x_condition != 'available':
-        raise UserError("%s is %s and cannot be put on a request or sample. Pick another instrument or mark it Available first." % (eq.name, dict(eq._fields['x_condition'].selection).get(eq.x_condition, eq.x_condition)))
-"""
+# ---- 2026-11-21: unavailable equipment may now be put on requests/samples (the blocking flag warns instead).
+RETIRED_RULES = ["Lab: block equipment that is down"]
+
+
+def retire_block_rule():
+    """Delete the old hard-block automation (and its server action) on existing installs. Idempotent."""
+    out = {}
+    for name in RETIRED_RULES:
+        ids = call("base.automation", "search", [[("name", "=", name)]], {"context": {"active_test": False}})
+        if ids:
+            acts = call("ir.actions.server", "search", [[("base_automation_id", "in", ids)]], {"context": {"active_test": False}})
+            call("base.automation", "unlink", [ids])
+            acts = call("ir.actions.server", "search", [[("id", "in", acts)]], {"context": {"active_test": False}}) if acts else []
+            if acts:  # normally removed with the automation (cascade); clean up if not
+                call("ir.actions.server", "unlink", [acts])
+        out[name] = "deleted" if ids else "absent"
+    return out
 
 
 def ensure_field(model, mid, name, vals):
@@ -178,10 +193,12 @@ EQ_VIEWS = [
 
 def ensure_condition(eq_mid):
     res = ensure_field("maintenance.equipment", eq_mid, "x_condition",
-                       {"ttype": "selection", "field_description": "Condition", "copied": True,
+                       {"ttype": "selection", "field_description": "Condition", "copied": True, "tracking": 1,
                         "selection_ids": [(0, 0, {"value": v, "name": n, "sequence": i}) for i, (v, n) in enumerate(CONDITIONS)]})
-    if res == "exists":  # make sure every option is there
+    if res == "exists":  # make sure every option is there, and that changes show in the chatter
         fid = call("ir.model.fields", "search", [[("model", "=", "maintenance.equipment"), ("name", "=", "x_condition")]])[0]
+        if not call("ir.model.fields", "read", [[fid], ["tracking"]])[0]["tracking"]:
+            call("ir.model.fields", "write", [[fid], {"tracking": 1}])
         have = {s["value"] for s in call("ir.model.fields.selection", "search_read", [[("field_id", "=", fid)]], {"fields": ["value"]})}
         for i, (v, n) in enumerate(CONDITIONS):
             if v not in have:
@@ -195,31 +212,38 @@ def ensure_condition(eq_mid):
 # ---------------------------------------------------------------- 5. filters, Lab home action + menu
 def filters_for(pid):
     base = [("project_id", "=", pid), ("parent_id", "=", False)]
-    open_ = base + [("stage_id.name", "!=", "Complete")]
+    open_ = base + [("stage_id.name", "not in", DONE_STAGES)]
     return [
         ("Open requests", open_, False),
         ("Unassigned", open_ + [("user_ids", "=", False)], False),
         ("Overdue", open_ + [("date_deadline", "<", "today")], False),
-        ("Blocked", base + [("stage_id.name", "=", "Blocked")], False),
+        ("Blocked", open_ + [("lab_is_blocked", "=", True)], False),
         ("Due in 14 days", open_ + [("date_deadline", ">=", "today"), ("date_deadline", "<=", "today +14d")], False),
-        ("Needs attention", open_ + ["|", "|", ("date_deadline", "<", "today"), ("stage_id.name", "=", "Blocked"), ("user_ids", "=", False)], True),
+        ("Pending pickup", base + [("stage_id.name", "=", "Pending pickup")], False),
+        ("Needs attention", open_ + ["|", "|", ("date_deadline", "<", "today"), ("lab_is_blocked", "=", True), ("user_ids", "=", False)], True),
     ]
 
 
+# 2026-11-22: renamed from "Lab home" so it is not confused with the "Lab Home" dashboard of the lab_dashboard add-on.
+# Found by either name, so the rename is idempotent.
+BOARD_NAME = "Requests board"
+BOARD_NAMES = [BOARD_NAME, "Lab home"]
+
+
 def ensure_lab_home(pid):
-    act_vals = {"name": "Lab home", "res_model": "project.task", "view_mode": "kanban,list,form,calendar", "target": "current",
+    act_vals = {"name": BOARD_NAME, "res_model": "project.task", "view_mode": "kanban,list,form,calendar", "target": "current",
                 "domain": repr([("project_id", "=", pid), ("parent_id", "=", False)]),
                 "context": repr({"default_project_id": pid, "search_default_needs_attention": 1}),
                 "help": '<p class="o_view_nocontent_smiling_face">Lab requests only (no samples). Use the favourites filters: '
-                        'Open, Unassigned, Overdue, Blocked, Due in 14 days, Needs attention.</p>'}
-    aid, a_state = upsert("ir.actions.act_window", [("name", "=", "Lab home"), ("res_model", "=", "project.task")], act_vals)
+                        'Open, Unassigned, Overdue, Blocked, Due in 14 days, Pending pickup, Needs attention.</p>'}
+    aid, a_state = upsert("ir.actions.act_window", [("name", "in", BOARD_NAMES), ("res_model", "=", "project.task")], act_vals)
     out = {}
     for name, dom, default in filters_for(pid):
         out[name] = upsert("ir.filters", [("name", "=", name), ("model_id", "=", "project.task"), ("action_id", "=", aid)],
                            {"name": name, "model_id": "project.task", "domain": repr(dom), "context": "{}", "sort": "[]",
                             "user_ids": [(6, 0, [])], "action_id": aid, "is_default": default, "active": True})[1]
-    menu = upsert("ir.ui.menu", [("name", "=", "Lab home"), ("parent_id", "=", xmlid("project", "menu_main_pm"))],
-                  {"name": "Lab home", "parent_id": xmlid("project", "menu_main_pm"), "sequence": 0,
+    menu = upsert("ir.ui.menu", [("name", "in", BOARD_NAMES), ("parent_id", "=", xmlid("project", "menu_main_pm"))],
+                  {"name": BOARD_NAME, "parent_id": xmlid("project", "menu_main_pm"), "sequence": 0,
                    "action": f"ir.actions.act_window,{aid}"})
     return a_state, out, menu[1]
 
@@ -231,9 +255,23 @@ def ensure_project():
     stages = {}
     for seq, name in enumerate(STAGES, start=1):
         sids = call("project.task.type", "search", [[("name", "=", name), ("project_ids", "in", [pid])]], {"limit": 1})
+        values = {"name": name, "sequence": seq, "fold": False}  # Complete is no longer the last stage
+        if sids:
+            call("project.task.type", "write", [sids, values])
         stages[name] = sids[0] if sids else call("project.task.type", "create",
-                                                 [{"name": name, "sequence": seq, "fold": name == "Complete", "project_ids": [(4, pid)]}])
+                                                 [{**values, "project_ids": [(4, pid)]}])
+        _ensure_workflow_xmlid("stage_" + name.lower().replace(" ", "_"), "project.task.type", stages[name])
+    _ensure_workflow_xmlid("project_lab_requests", "project.project", pid)
     return pid, stages
+
+
+def _ensure_workflow_xmlid(name, model, res_id):
+    ids = call("ir.model.data", "search", [[("module", "=", "lab_tracker"), ("name", "=", name)]])
+    values = {"model": model, "res_id": res_id, "noupdate": True}
+    if ids:
+        call("ir.model.data", "write", [ids, values])
+    else:
+        call("ir.model.data", "create", [{**values, "module": "lab_tracker", "name": name}])
 
 
 def ensure_equipment_category():
@@ -256,7 +294,7 @@ def main():
     # 2
     print("labels:", ensure_labels())
     print("view samples wording:", ensure_view("Lab: call sub-tasks Samples", "project.task", form_view, "form", VIEW_SAMPLES))
-    # 4 (before 3: the task view domain and the block rule read x_condition)
+    # 4 (before 3: equipment views and the add-on's equipment labels read x_condition)
     print("x_condition / equipment views:", ensure_condition(eq_mid))
     # 3
     print("x_equipment_id:", ensure_field("project.task", task_mid, "x_equipment_id",
@@ -265,10 +303,9 @@ def main():
     print("view equipment on task:", ensure_view("Lab: equipment on task", "project.task", form_view, "form", VIEW_EQUIP))
     print("rule inherit equipment:", ensure_rule("Lab sample: inherit equipment", task_mid, "on_create", CODE_INHERIT, "Inherit equipment",
                                                  (), "[('parent_id','!=',False)]"))
-    print("rule block down equipment:", ensure_rule("Lab: block equipment that is down", task_mid, "on_create_or_write", CODE_BLOCK,
-                                                    "Block down equipment", ("x_equipment_id",)))
+    print("retired rules:", retire_block_rule())
     # 5
-    print("Lab home (action, filters, menu):", ensure_lab_home(pid))
+    print("Requests board (action, filters, menu):", ensure_lab_home(pid))
 
     rules = call("base.automation", "search_read", [[("name", "ilike", "Lab")]], {"fields": ["name", "active"], "context": {"active_test": False}})
     print("rules now:", [(r["name"], r["active"]) for r in rules])

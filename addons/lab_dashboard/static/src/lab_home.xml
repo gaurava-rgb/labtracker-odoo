@@ -11,6 +11,8 @@
                             <t t-if="this.state.data.source === 'replica'">replica</t>
                             <t t-else="">live data</t>
                         </span>
+                        <span t-if="this.state.data.scope === 'assigned'" class="o_lab_badge o_lab_badge_scope"
+                              title="You see only the requests and samples assigned to you">your work</span>
                         <span class="o_lab_asof">as of <t t-out="this.state.data.as_of"/> UTC</span>
                     </t>
                     <button class="btn btn-secondary btn-sm" t-on-click="this.load" t-att-disabled="this.state.loading">Refresh</button>
@@ -43,7 +45,7 @@
                                 <td class="o_lab_nowrap"><t t-out="r.stage"/></td>
                                 <td><t t-out="r.assignees || '—'"/></td>
                                 <td class="o_lab_nowrap" t-att-class="r.overdue ? 'o_lab_overdue' : ''"><t t-out="r.deadline || '—'"/></td>
-                                <td><t t-foreach="r.flags" t-as="f" t-key="f"><span class="o_lab_flag" t-att-class="'o_lab_flag_' + f"><t t-out="f"/></span></t></td>
+                                <td><t t-foreach="r.flags" t-as="f" t-key="f"><span class="o_lab_flag" t-att-class="'o_lab_flag_' + f" t-att-title="f === 'blocked' ? r.blocked_reason : f"><t t-out="f"/></span></t><small t-if="r.blocked_reason" class="o_lab_block_reason" t-out="r.blocked_reason"/></td>
                             </tr>
                         </tbody>
                     </table>
@@ -71,9 +73,10 @@
                 <section class="o_lab_panel">
                     <header>
                         <h3>Equipment status</h3>
-                        <a href="#" t-on-click.prevent="() => this.openTile(this.tiles[4])">down only</a>
+                        <a href="#" t-on-click.prevent="() => this.openTile(this.equipmentTile)">down only</a>
                     </header>
-                    <table class="o_lab_table">
+                    <div class="o_lab_table_scroll" tabindex="0" role="region" aria-label="Equipment status">
+                    <table class="o_lab_table o_lab_equipment_table">
                         <thead><tr><th>Equipment</th><th>Serial</th><th>Condition</th><th>Open requests</th></tr></thead>
                         <tbody>
                             <tr t-if="!this.state.data.equipment.length"><td colspan="4" class="o_lab_empty">No equipment.</td></tr>
@@ -85,6 +88,7 @@
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                 </section>
             </div>
         </div>

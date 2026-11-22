@@ -32,7 +32,7 @@ dbfilter = ^${ODOO_DB}\$
 list_db = False
 proxy_mode = ${PROXY_MODE}
 http_interface = 0.0.0.0
-addons_path = /mnt/extra-addons
+addons_path = /opt/labtracker/addons
 data_dir = /var/lib/odoo
 workers = ${WORKERS}
 max_cron_threads = 1
@@ -63,7 +63,7 @@ PY
   log "database ready"
 else
   # 4. image updated with a newer lab_dashboard? upgrade the module before serving
-  WANT=$(python3 -c "import ast,sys; print(ast.literal_eval(open('/mnt/extra-addons/lab_dashboard/__manifest__.py').read())['version'])")
+  WANT=$(python3 -c "import ast,sys; print(ast.literal_eval(open('/opt/labtracker/addons/lab_dashboard/__manifest__.py').read())['version'])")
   HAVE=$(python3 "$INIT/db_tool.py" module_version lab_dashboard)
   if [ -n "$HAVE" ] && [ "$HAVE" != "$WANT" ]; then
     log "lab_dashboard ${HAVE} -> ${WANT}: upgrading module"

@@ -66,13 +66,22 @@ apt-get update && apt-get install -y ca-certificates curl git
 curl -fsSL https://get.docker.com | sh
 ```
 
-Check:
+Start Docker and enable it to start after server reboots:
+
+```sh
+systemctl enable --now docker
+```
+
+Check both Compose and the Docker Engine:
 
 ```sh
 docker compose version
+docker info
 ```
 
-You should see a version like `Docker Compose version v2.xx`.
+You should see a Compose version and Docker information containing a **Server** section with no connection error. `docker compose version` alone only checks that Compose is installed; it does not check that Docker can run containers.
+
+**Do not continue until both checks succeed.** If Docker fails to start or you see `Cannot connect to the Docker daemon`, use the Docker troubleshooting steps below.
 
 ---
 
@@ -158,7 +167,7 @@ Settings, **Users & Companies**, **Users**, **New**.
 - Name and email (the email is their login).
 - On the **Access Rights** tab, under **Lab**, pick one:
   - **Manager**: everything in the four apps. Give this to the lab owner and anyone who runs the lab day to day.
-  - **Coordinator**: sees everything, edits requests and samples, cannot change instruments or clients.
+  - **Coordinator**: sees everything, edits requests and samples, can change an instrument's condition (nothing else on it), can add and edit clients and equipment contact persons but not delete them.
   - **Intern**: sees only work assigned to them, can tick boxes and add notes.
 - Save. Click **Send an invitation email** if email is set up, or set a password yourself with **Change Password** under the Actions menu.
 
@@ -224,6 +233,46 @@ Odoo restarts, applies any new rules by itself, and comes back in about a minute
 ---
 
 ## 14. Troubleshooting
+
+**Docker says "Cannot connect to the Docker daemon"**
+
+Run on the server as root:
+
+```sh
+systemctl enable --now docker
+docker info
+```
+
+If `docker info` shows a **Server** section without an error, return to step 7. You do not need to clone again or recreate `.env`.
+
+If Docker fails to start, collect its startup error:
+
+```sh
+systemctl status docker.service docker.socket --no-pager -l
+journalctl -u docker.service -b -n 100 --no-pager -o cat
+```
+
+`Start request repeated too quickly` means systemd stopped retrying; look earlier in the journal output for the actual error.
+
+If the error specifically says **`failed to load listeners: no sockets found via socket activation`**, restart Docker's socket and service in this order. This stops Docker, so any existing containers may be interrupted:
+
+```sh
+systemctl stop docker.service docker.socket
+systemctl reset-failed docker.service docker.socket
+systemctl start docker.socket
+systemctl start docker.service
+docker info
+```
+
+If any command fails, stop and collect the following output for whoever supports you:
+
+```sh
+systemctl status docker.socket docker.service --no-pager -l
+systemctl cat docker.socket docker.service
+journalctl -u docker.socket -u docker.service -b -n 100 --no-pager -o cat
+```
+
+If the service cannot be found, the Docker Engine installation needs checking. Do not delete Docker data or regenerate `.env` to fix a daemon startup error.
 
 **The browser says "site cannot be reached" or shows a certificate warning**
 - DNS is not pointing here yet. Re-run the `ping` check from step 2.
